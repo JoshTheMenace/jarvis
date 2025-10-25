@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'hud_screen.dart';
-
-// TODO: Replace with your actual Gemini API key
-const String GEMINI_API_KEY = 'AIzaSyC9FnbVw__DFvhCO9CJYzyVa6mvJtL0sE0';
-
-// Picovoice access key for wake word detection
-const String PICOVOICE_ACCESS_KEY = 'sWaWJE1czYJouPlr8yNxVb3Uv5VF5GseiVOyoQg+V08g+Wzhe5I5bw==';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
 
   // Set to fullscreen immersive mode
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -54,9 +52,9 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const JarvisHUDScreen(
-        apiKey: GEMINI_API_KEY,
-        picovoiceKey: PICOVOICE_ACCESS_KEY,
+      home: JarvisHUDScreen(
+        apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
+        picovoiceKey: dotenv.env['PICOVOICE_ACCESS_KEY'] ?? '',
       ),
     );
   }
