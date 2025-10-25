@@ -189,6 +189,14 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
                     },
                     'required': ['title']
                   }
+                },
+                {
+                  'name': 'clear_screen',
+                  'description': 'Clear all UI components from the screen. Use this when the user wants to dismiss all notes, reminders, lists, and other displayed items.',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {}
+                  }
                 }
               ]
             }
@@ -453,6 +461,14 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
           });
           result = 'Card "${args['title']}" displayed successfully';
         }
+        break;
+
+      case 'clear_screen':
+        print('=== Clearing screen');
+        _toolCallController.add({
+          'function': 'clear_screen',
+        });
+        result = 'Screen cleared successfully';
         break;
 
       default:
