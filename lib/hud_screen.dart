@@ -5,6 +5,7 @@ import 'services/gemini_live_service.dart';
 import 'services/audio_recorder_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/wake_word_service.dart';
+import 'services/camera_frame_service.dart';
 import 'models/ui_component.dart';
 import 'widgets/hud_overlay_widget.dart';
 import 'dart:async';
@@ -30,10 +31,12 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
   late AudioRecorderService _audioRecorder;
   late AudioPlayerService _audioPlayer;
   late WakeWordService _wakeWordService;
+  late CameraFrameService _cameraFrameService;
 
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
   bool _isCameraInitialized = false;
+  bool _isSharingCamera = false;
 
   final List<UIComponent> _uiComponents = [];
   final Map<String, AnimationController> _componentAnimations = {};
@@ -103,6 +106,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     _geminiService = GeminiLiveService(apiKey: widget.apiKey);
     _audioRecorder = AudioRecorderService(_geminiService);
     _audioPlayer = AudioPlayerService(_geminiService);
+    _cameraFrameService = CameraFrameService();
 
     // Initialize wake word service
     _wakeWordService = WakeWordService(
@@ -357,6 +361,15 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
 
     if (_isRecording) {
       await _audioRecorder.stopRecording();
+
+      // Stop camera sharing
+      if (_isSharingCamera && _cameraController != null) {
+        await _cameraFrameService.stopCapturing(_cameraController!);
+        setState(() {
+          _isSharingCamera = false;
+        });
+      }
+
       setState(() {
         _isRecording = false;
         _micPulse = 1.0;
@@ -367,6 +380,31 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
 
       try {
         await _audioRecorder.startRecording();
+
+        // Start camera sharing when recording starts
+        if (_cameraController != null && _isCameraInitialized) {
+          try {
+            await _cameraFrameService.startCapturing(
+              cameraController: _cameraController!,
+              onFrameCaptured: (bytes) async {
+                try {
+                  await _geminiService.sendVideoFrame(bytes);
+                } catch (e) {
+                  print('Error sending video frame: $e');
+                }
+              },
+              intervalMs: 1000, // 1 frame per second
+            );
+
+            setState(() {
+              _isSharingCamera = true;
+            });
+            print('Started camera frame streaming');
+          } catch (e) {
+            print('Failed to start camera sharing: $e');
+          }
+        }
+
         setState(() {
           _isRecording = true;
         });
@@ -521,6 +559,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
   @override
   void dispose() {
     _pulseTimer?.cancel();
+    _cameraFrameService.dispose(_cameraController);
     _cameraController?.dispose();
     _audioRecorder.dispose();
     _audioPlayer.dispose();

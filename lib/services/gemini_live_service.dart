@@ -394,6 +394,37 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
     }
   }
 
+  /// Send video frame to Gemini
+  /// Frame should be JPEG encoded image bytes
+  Future<void> sendVideoFrame(Uint8List imageBytes) async {
+    if (!_isConnected) {
+      throw Exception('Not connected to Gemini Live API');
+    }
+
+    try {
+      final message = {
+        'realtimeInput': {
+          'mediaChunks': [
+            {
+              'mimeType': 'image/jpeg',
+              'data': base64Encode(imageBytes),
+            }
+          ]
+        }
+      };
+
+      _channel?.sink.add(jsonEncode(message));
+
+      // Log every 10th frame to avoid spam
+      if (DateTime.now().second % 10 == 0) {
+        print('>>> Sent video frame: ${imageBytes.length} bytes');
+      }
+    } catch (e) {
+      print('Error sending video frame: $e');
+      rethrow;
+    }
+  }
+
   /// Handle function calls from Gemini
   void _handleFunctionCall(Map<String, dynamic> functionCall) {
     final functionName = functionCall['name'];
