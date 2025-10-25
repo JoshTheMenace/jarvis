@@ -6,6 +6,9 @@ import 'hud_screen.dart';
 // TODO: Replace with your actual Gemini API key
 const String GEMINI_API_KEY = 'AIzaSyC9FnbVw__DFvhCO9CJYzyVa6mvJtL0sE0';
 
+// Picovoice access key for wake word detection
+const String PICOVOICE_ACCESS_KEY = 'sWaWJE1czYJouPlr8yNxVb3Uv5VF5GseiVOyoQg+V08g+Wzhe5I5bw==';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -51,7 +54,10 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const JarvisHUDScreen(apiKey: GEMINI_API_KEY),
+      home: const JarvisHUDScreen(
+        apiKey: GEMINI_API_KEY,
+        picovoiceKey: PICOVOICE_ACCESS_KEY,
+      ),
     );
   }
 }

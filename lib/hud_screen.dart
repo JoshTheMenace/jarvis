@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'services/gemini_live_service.dart';
 import 'services/audio_recorder_service.dart';
 import 'services/audio_player_service.dart';
+import 'services/wake_word_service.dart';
 import 'models/ui_component.dart';
 import 'widgets/hud_overlay_widget.dart';
 import 'dart:async';
@@ -11,10 +12,12 @@ import 'dart:async';
 /// Jarvis HUD Screen - Tony Stark style AR interface
 class JarvisHUDScreen extends StatefulWidget {
   final String apiKey;
+  final String picovoiceKey;
 
   const JarvisHUDScreen({
     super.key,
     required this.apiKey,
+    required this.picovoiceKey,
   });
 
   @override
@@ -26,6 +29,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
   late GeminiLiveService _geminiService;
   late AudioRecorderService _audioRecorder;
   late AudioPlayerService _audioPlayer;
+  late WakeWordService _wakeWordService;
 
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
@@ -100,6 +104,12 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     _audioRecorder = AudioRecorderService(_geminiService);
     _audioPlayer = AudioPlayerService(_geminiService);
 
+    // Initialize wake word service
+    _wakeWordService = WakeWordService(
+      accessKey: widget.picovoiceKey,
+      onWakeWordDetected: _onWakeWordDetected,
+    );
+
     // Listen to text responses for transcript
     _geminiService.textOutputStream.listen((text) {
       setState(() {
@@ -129,8 +139,44 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
       _handleToolCall(toolCall);
     });
 
+    // Listen to turn complete events to auto-stop recording
+    _geminiService.turnCompleteStream.listen((_) {
+      print('Turn completed - stopping recording');
+      if (_isRecording) {
+        _toggleRecording();
+      }
+    });
+
     // Auto-connect to Gemini
     _connect();
+
+    // Initialize and start wake word detection
+    _initializeWakeWord();
+  }
+
+  /// Initialize wake word detection
+  Future<void> _initializeWakeWord() async {
+    try {
+      final status = await Permission.microphone.request();
+      if (!status.isGranted) {
+        print('Microphone permission denied - wake word detection disabled');
+        return;
+      }
+
+      await _wakeWordService.initialize();
+      await _wakeWordService.start();
+      print('Wake word detection started');
+    } catch (e) {
+      print('Error initializing wake word detection: $e');
+    }
+  }
+
+  /// Handle wake word detection
+  void _onWakeWordDetected() {
+    print('Wake word "Jarvis" detected!');
+    if (!_isRecording && _isConnected) {
+      _toggleRecording();
+    }
   }
 
   /// Start pulse animation for microphone
@@ -467,49 +513,6 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
               ),
             ),
           ),
-
-          // Microphone button (bottom center)
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: _toggleRecording,
-                child: AnimatedScale(
-                  scale: _isRecording ? _micPulse : 1.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _isRecording
-                          ? Colors.redAccent.withOpacity(0.8)
-                          : Colors.cyanAccent.withOpacity(0.3),
-                      border: Border.all(
-                        color: _isRecording ? Colors.redAccent : Colors.cyanAccent,
-                        width: 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isRecording ? Colors.redAccent : Colors.cyanAccent)
-                              .withOpacity(0.5),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      _isRecording ? Icons.mic : Icons.mic_none,
-                      color: _isRecording ? Colors.white : Colors.cyanAccent,
-                      size: 32,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -522,6 +525,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     _geminiService.dispose();
+    _wakeWordService.dispose();
     for (var controller in _componentAnimations.values) {
       controller.dispose();
     }

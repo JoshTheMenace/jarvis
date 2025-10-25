@@ -19,6 +19,8 @@ class GeminiLiveService {
       StreamController<bool>.broadcast();
   final StreamController<Map<String, dynamic>> _toolCallController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<bool> _turnCompleteController =
+      StreamController<bool>.broadcast();
 
   /// Stream of audio data received from Gemini (PCM 24kHz, 16-bit, mono)
   Stream<Uint8List> get audioOutputStream => _audioOutputController.stream;
@@ -32,6 +34,9 @@ class GeminiLiveService {
   /// Stream of tool calls from Gemini (for display_text function)
   Stream<Map<String, dynamic>> get toolCallStream => _toolCallController.stream;
 
+  /// Stream of turn complete events
+  Stream<bool> get turnCompleteStream => _turnCompleteController.stream;
+
   /// Whether the service is currently connected
   bool get isConnected => _isConnected;
 
@@ -40,7 +45,7 @@ class GeminiLiveService {
   /// Connect to the Gemini Live API
   Future<void> connect({
     String model = 'models/gemini-2.5-flash-native-audio-preview-09-2025',
-    String voiceName = 'Zephyr',
+    String voiceName = 'Algenib',
     List<String> responseModalities = const ['AUDIO'],
   }) async {
     try {
@@ -293,6 +298,7 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
         // Check for turn completion (interruption handling)
         if (data['serverContent']['turnComplete'] == true) {
           print('>>> Turn complete');
+          _turnCompleteController.add(true);
         }
       }
 
@@ -529,5 +535,6 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
     _textOutputController.close();
     _connectionStateController.close();
     _toolCallController.close();
+    _turnCompleteController.close();
   }
 }
