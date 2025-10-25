@@ -242,6 +242,10 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
           content: toolCall['content'],
         );
         break;
+
+      case 'clear_screen':
+        _clearAllComponents();
+        return; // Don't add a component for clear_screen
     }
 
     if (component != null) {
@@ -276,6 +280,29 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
         controller.dispose();
       });
     }
+  }
+
+  /// Clear all components from the screen
+  void _clearAllComponents() {
+    print('Clearing all components');
+
+    // Reverse all animations
+    for (var controller in _componentAnimations.values) {
+      controller.reverse();
+    }
+
+    // After animations complete, clear everything
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) {
+        setState(() {
+          _uiComponents.clear();
+          for (var controller in _componentAnimations.values) {
+            controller.dispose();
+          }
+          _componentAnimations.clear();
+        });
+      }
+    });
   }
 
   /// Toggle voice recording
