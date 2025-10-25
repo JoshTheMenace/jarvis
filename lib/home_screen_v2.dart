@@ -3,6 +3,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'services/gemini_live_service.dart';
 import 'services/audio_recorder_service.dart';
 import 'services/audio_player_service.dart';
+import 'models/ui_component.dart';
+import 'widgets/ui_component_widget.dart';
 
 /// Main screen for interacting with Gemini Live API
 /// Supports both audio and text communication
@@ -25,11 +27,13 @@ class _GeminiLiveChatScreenState extends State<GeminiLiveChatScreen> {
 
   final TextEditingController _textController = TextEditingController();
   final List<ChatMessage> _messages = [];
+  final List<UIComponent> _uiComponents = [];
   final ScrollController _scrollController = ScrollController();
 
   bool _isConnected = false;
   bool _isRecording = false;
   bool _isConnecting = false;
+  int _componentIdCounter = 0;
 
   @override
   void initState() {
@@ -65,6 +69,118 @@ class _GeminiLiveChatScreenState extends State<GeminiLiveChatScreen> {
         _isConnected = isConnected;
         _isConnecting = false;
       });
+    });
+
+    // Listen to tool calls and create UI components
+    _geminiService.toolCallStream.listen((toolCall) {
+      _handleToolCall(toolCall);
+    });
+  }
+
+  /// Handle tool calls from Gemini and create appropriate UI components
+  void _handleToolCall(Map<String, dynamic> toolCall) {
+    final function = toolCall['function'] as String?;
+    if (function == null) return;
+
+    final componentId = 'component_${_componentIdCounter++}';
+    UIComponent? component;
+
+    switch (function) {
+      case 'show_note':
+        component = UIComponent.note(
+          id: componentId,
+          title: toolCall['title'] ?? 'Note',
+          content: toolCall['content'] ?? '',
+        );
+        break;
+
+      case 'show_reminder':
+        final timeStr = toolCall['time'] as String?;
+        DateTime? time;
+        if (timeStr != null) {
+          try {
+            time = DateTime.parse(timeStr);
+          } catch (e) {
+            print('Error parsing reminder time: $e');
+            time = DateTime.now().add(const Duration(hours: 1));
+          }
+        } else {
+          time = DateTime.now().add(const Duration(hours: 1));
+        }
+
+        component = UIComponent.reminder(
+          id: componentId,
+          title: toolCall['title'] ?? 'Reminder',
+          time: time,
+          description: toolCall['description'],
+        );
+        break;
+
+      case 'show_calendar_event':
+        final startTimeStr = toolCall['startTime'] as String?;
+        final endTimeStr = toolCall['endTime'] as String?;
+
+        DateTime? startTime;
+        DateTime? endTime;
+
+        if (startTimeStr != null) {
+          try {
+            startTime = DateTime.parse(startTimeStr);
+          } catch (e) {
+            print('Error parsing event start time: $e');
+            startTime = DateTime.now();
+          }
+        } else {
+          startTime = DateTime.now();
+        }
+
+        if (endTimeStr != null) {
+          try {
+            endTime = DateTime.parse(endTimeStr);
+          } catch (e) {
+            print('Error parsing event end time: $e');
+          }
+        }
+
+        component = UIComponent.calendarEvent(
+          id: componentId,
+          title: toolCall['title'] ?? 'Event',
+          startTime: startTime,
+          endTime: endTime,
+          description: toolCall['description'],
+        );
+        break;
+
+      case 'show_list':
+        final items = (toolCall['items'] as List?)?.cast<String>() ?? [];
+        component = UIComponent.list(
+          id: componentId,
+          title: toolCall['title'] ?? 'List',
+          items: items,
+        );
+        break;
+
+      case 'show_card':
+        component = UIComponent.card(
+          id: componentId,
+          title: toolCall['title'] ?? 'Card',
+          subtitle: toolCall['subtitle'],
+          content: toolCall['content'],
+        );
+        break;
+    }
+
+    if (component != null) {
+      setState(() {
+        _uiComponents.add(component!);
+      });
+    }
+  }
+
+  /// Remove a UI component
+  void _removeComponent(String id) {
+    setState(() {
+      _uiComponents.removeWhere((component) => component.id == id);
     });
   }
 
@@ -185,7 +301,7 @@ class _GeminiLiveChatScreenState extends State<GeminiLiveChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gemini Live Chat'),
+        title: const Text('Jarvis AI Assistant'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           // Connection status indicator
@@ -229,12 +345,29 @@ class _GeminiLiveChatScreenState extends State<GeminiLiveChatScreen> {
               ),
             ),
 
+          // UI Components section
+          if (_uiComponents.isNotEmpty)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: ListView.builder(
+                padding: const EdgeInsets.only(top: 8),
+                itemCount: _uiComponents.length,
+                itemBuilder: (context, index) {
+                  final component = _uiComponents[index];
+                  return UIComponentWidget(
+                    component: component,
+                    onDismiss: () => _removeComponent(component.id),
+                  );
+                },
+              ),
+            ),
+
           // Message list
           Expanded(
             child: _messages.isEmpty
                 ? const Center(
                     child: Text(
-                      'Start a conversation with Gemini!\nUse the microphone or type a message.',
+                      'Start a conversation with Jarvis!\nUse the microphone or type a message.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.grey,

@@ -56,6 +56,22 @@ class GeminiLiveService {
       final setupMsg = {
         'setup': {
           'model': model,
+          'systemInstruction': {
+            'parts': [
+              {
+                'text': '''You are Jarvis, an advanced AI assistant inspired by Tony Stark's AI. You are helpful, intelligent, proactive, and have a sophisticated personality with a touch of wit.
+
+You help users with:
+- Managing notes and reminders
+- Organizing calendar events
+- Creating lists and tracking tasks
+- Providing information and assistance
+- Displaying relevant UI components when needed
+
+When users ask to see notes, reminders, calendar events, or lists, use the appropriate tool calls to display them on screen. Be conversational but efficient, and always aim to be genuinely helpful.'''
+              }
+            ]
+          },
           'generationConfig': {
             'responseModalities': responseModalities,
             'speechConfig': {
@@ -68,30 +84,110 @@ class GeminiLiveService {
             {
               'functionDeclarations': [
                 {
-                  'name': 'display_text',
-                  'description': 'Display text on the screen for the student to read. Use this to show transcripts of what you just said, translations, vocabulary words, or any text the student should see.',
+                  'name': 'show_note',
+                  'description': 'Display a note on the screen. Use this when the user wants to see a note or when you create a new note for them.',
                   'parameters': {
                     'type': 'object',
                     'properties': {
-                      'text': {
+                      'title': {
                         'type': 'string',
-                        'description': 'The text to display on screen'
+                        'description': 'The title of the note'
                       },
-                      'type': {
+                      'content': {
                         'type': 'string',
-                        'description': 'Type of text: transcript, translation, vocabulary, or note',
-                        'enum': ['transcript', 'translation', 'vocabulary', 'note']
+                        'description': 'The content/body of the note'
                       }
                     },
-                    'required': ['text', 'type']
+                    'required': ['title', 'content']
                   }
                 },
                 {
-                  'name': 'hello_world',
-                  'description': 'Prints "Hello World" to the console. Use this as a test function to demonstrate tool calling capabilities.',
+                  'name': 'show_reminder',
+                  'description': 'Display a reminder on the screen. Use this when the user wants to set a reminder or see an existing reminder.',
                   'parameters': {
                     'type': 'object',
-                    'properties': {},
+                    'properties': {
+                      'title': {
+                        'type': 'string',
+                        'description': 'The title/main text of the reminder'
+                      },
+                      'time': {
+                        'type': 'string',
+                        'description': 'ISO 8601 formatted date-time string for when the reminder should trigger'
+                      },
+                      'description': {
+                        'type': 'string',
+                        'description': 'Optional additional details about the reminder'
+                      }
+                    },
+                    'required': ['title', 'time']
+                  }
+                },
+                {
+                  'name': 'show_calendar_event',
+                  'description': 'Display a calendar event on the screen. Use this when the user wants to schedule an event or see an existing event.',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {
+                      'title': {
+                        'type': 'string',
+                        'description': 'The title of the event'
+                      },
+                      'startTime': {
+                        'type': 'string',
+                        'description': 'ISO 8601 formatted date-time string for when the event starts'
+                      },
+                      'endTime': {
+                        'type': 'string',
+                        'description': 'ISO 8601 formatted date-time string for when the event ends (optional)'
+                      },
+                      'description': {
+                        'type': 'string',
+                        'description': 'Optional description or details about the event'
+                      }
+                    },
+                    'required': ['title', 'startTime']
+                  }
+                },
+                {
+                  'name': 'show_list',
+                  'description': 'Display a list on the screen. Use this for todo lists, shopping lists, or any bulleted list of items.',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {
+                      'title': {
+                        'type': 'string',
+                        'description': 'The title of the list'
+                      },
+                      'items': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Array of items in the list'
+                      }
+                    },
+                    'required': ['title', 'items']
+                  }
+                },
+                {
+                  'name': 'show_card',
+                  'description': 'Display a custom information card on the screen. Use this for displaying general information, summaries, or any structured content.',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {
+                      'title': {
+                        'type': 'string',
+                        'description': 'The main title of the card'
+                      },
+                      'subtitle': {
+                        'type': 'string',
+                        'description': 'Optional subtitle or secondary heading'
+                      },
+                      'content': {
+                        'type': 'string',
+                        'description': 'The main content to display in the card'
+                      }
+                    },
+                    'required': ['title']
                   }
                 }
               ]
@@ -284,31 +380,75 @@ class GeminiLiveService {
     }
   }
 
-  /// Handle function calls from Gemini (like display_text)
+  /// Handle function calls from Gemini
   void _handleFunctionCall(Map<String, dynamic> functionCall) {
     final functionName = functionCall['name'];
     final args = functionCall['args'] as Map<String, dynamic>?;
 
-    if (functionName == 'display_text' && args != null) {
-      final text = args['text'] ?? '';
-      final type = args['type'] ?? 'transcript';
+    print('=== Function called: $functionName');
 
-      print('=== Displaying text: $text (type: $type)');
+    switch (functionName) {
+      case 'show_note':
+        if (args != null) {
+          print('=== Creating note: ${args['title']}');
+          _toolCallController.add({
+            'function': 'show_note',
+            'title': args['title'],
+            'content': args['content'],
+          });
+        }
+        break;
 
-      // Emit the display_text call to the stream
-      _toolCallController.add({
-        'function': 'display_text',
-        'text': text,
-        'type': type,
-      });
-    } else if (functionName == 'hello_world') {
-      print('=== Hello World function called!');
-      print('Hello World');
+      case 'show_reminder':
+        if (args != null) {
+          print('=== Creating reminder: ${args['title']}');
+          _toolCallController.add({
+            'function': 'show_reminder',
+            'title': args['title'],
+            'time': args['time'],
+            'description': args['description'],
+          });
+        }
+        break;
 
-      // Emit the hello_world call to the stream
-      _toolCallController.add({
-        'function': 'hello_world',
-      });
+      case 'show_calendar_event':
+        if (args != null) {
+          print('=== Creating calendar event: ${args['title']}');
+          _toolCallController.add({
+            'function': 'show_calendar_event',
+            'title': args['title'],
+            'startTime': args['startTime'],
+            'endTime': args['endTime'],
+            'description': args['description'],
+          });
+        }
+        break;
+
+      case 'show_list':
+        if (args != null) {
+          print('=== Creating list: ${args['title']}');
+          _toolCallController.add({
+            'function': 'show_list',
+            'title': args['title'],
+            'items': args['items'],
+          });
+        }
+        break;
+
+      case 'show_card':
+        if (args != null) {
+          print('=== Creating card: ${args['title']}');
+          _toolCallController.add({
+            'function': 'show_card',
+            'title': args['title'],
+            'subtitle': args['subtitle'],
+            'content': args['content'],
+          });
+        }
+        break;
+
+      default:
+        print('=== Unknown function: $functionName');
     }
   }
 
