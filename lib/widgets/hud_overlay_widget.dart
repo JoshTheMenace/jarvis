@@ -121,6 +121,8 @@ class HUDOverlayWidget extends StatelessWidget {
         return _buildListContent();
       case UIComponentType.card:
         return _buildCardContent();
+      case UIComponentType.taskList:
+        return _buildTaskListContent();
     }
   }
 
@@ -460,6 +462,93 @@ class HUDOverlayWidget extends StatelessWidget {
     );
   }
 
+  Widget _buildTaskListContent() {
+    final title = component.data['title'] as String? ?? 'Mission Tasks';
+    final tasks = component.tasks;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.check_box_outlined,
+              color: _getTypeColor(),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: _getTypeColor(),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...tasks.asMap().entries.map((entry) {
+          final index = entry.key;
+          final task = entry.value;
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 18,
+                  height: 18,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: task.isCompleted
+                          ? _getTypeColor()
+                          : Colors.white.withOpacity(0.4),
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(3),
+                    color: task.isCompleted
+                        ? _getTypeColor().withOpacity(0.2)
+                        : Colors.transparent,
+                  ),
+                  child: task.isCompleted
+                      ? Icon(
+                          Icons.check,
+                          size: 14,
+                          color: _getTypeColor(),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${index + 1}. ${task.description}',
+                    style: TextStyle(
+                      color: task.isCompleted
+                          ? Colors.white.withOpacity(0.5)
+                          : Colors.white,
+                      fontSize: 13,
+                      height: 1.4,
+                      decoration: task.isCompleted
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
   Color _getTypeColor() {
     switch (component.type) {
       case UIComponentType.note:
@@ -472,6 +561,8 @@ class HUDOverlayWidget extends StatelessWidget {
         return Colors.greenAccent;
       case UIComponentType.card:
         return Colors.purpleAccent;
+      case UIComponentType.taskList:
+        return Colors.tealAccent;
     }
   }
 

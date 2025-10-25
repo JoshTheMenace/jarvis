@@ -9,6 +9,7 @@ import 'services/camera_frame_service.dart';
 import 'services/vitals_service.dart';
 import 'models/ui_component.dart';
 import 'models/vitals_data.dart';
+import 'models/task_item.dart';
 import 'widgets/hud_overlay_widget.dart';
 import 'widgets/vitals_hud_widget.dart';
 import 'widgets/waveform_visualizer.dart';
@@ -236,7 +237,8 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     final function = toolCall['function'] as String?;
     if (function == null) return;
 
-    final componentId = 'component_${_componentIdCounter++}';
+    // Use provided ID if available, otherwise generate one
+    final componentId = toolCall['id'] as String? ?? 'component_${_componentIdCounter++}';
     UIComponent? component;
 
     switch (function) {
@@ -321,6 +323,32 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
         );
         break;
 
+      case 'create_task_list':
+        final taskDescriptions = (toolCall['tasks'] as List?)?.cast<String>() ?? [];
+        final tasks = taskDescriptions.asMap().entries.map((entry) {
+          return TaskItem(
+            id: 'task_${componentId}_${entry.key}',
+            description: entry.value,
+            isCompleted: false,
+          );
+        }).toList();
+
+        component = UIComponent.taskList(
+          id: componentId,
+          title: toolCall['title'] ?? 'Mission Tasks',
+          tasks: tasks,
+        );
+        break;
+
+      case 'complete_task':
+        final taskListId = toolCall['task_list_id'] as String?;
+        final taskNumber = toolCall['task_number'] as int?;
+
+        if (taskListId != null && taskNumber != null) {
+          _completeTask(taskListId, taskNumber);
+        }
+        return; // Don't add a new component for complete_task
+
       case 'clear_screen':
         _clearAllComponents();
         return; // Don't add a component for clear_screen
@@ -381,6 +409,42 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
         });
       }
     });
+  }
+
+  /// Complete a task in a task list
+  void _completeTask(String taskListId, int taskNumber) {
+    print('Completing task $taskNumber in list $taskListId');
+
+    // Find the task list component
+    final taskListIndex = _uiComponents.indexWhere(
+      (component) => component.id == taskListId && component.type == UIComponentType.taskList,
+    );
+
+    if (taskListIndex == -1) {
+      print('Task list not found: $taskListId');
+      return;
+    }
+
+    final taskList = _uiComponents[taskListIndex];
+    final tasks = taskList.tasks;
+
+    // Validate task number
+    if (taskNumber < 1 || taskNumber > tasks.length) {
+      print('Invalid task number: $taskNumber (valid range: 1-${tasks.length})');
+      return;
+    }
+
+    // Get the task ID (taskNumber is 1-indexed, list is 0-indexed)
+    final taskId = tasks[taskNumber - 1].id;
+
+    // Update the component with the completed task
+    final updatedComponent = taskList.updateTaskStatus(taskId, true);
+
+    setState(() {
+      _uiComponents[taskListIndex] = updatedComponent;
+    });
+
+    print('Task $taskNumber marked as complete');
   }
 
   /// Toggle voice recording

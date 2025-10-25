@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'task_item.dart';
 
 /// Represents a dynamic UI component that can be displayed
 class UIComponent {
@@ -103,6 +104,47 @@ class UIComponent {
       },
     );
   }
+
+  /// Create a task list component
+  factory UIComponent.taskList({
+    required String id,
+    required String title,
+    required List<TaskItem> tasks,
+  }) {
+    return UIComponent(
+      id: id,
+      type: UIComponentType.taskList,
+      data: {
+        'title': title,
+        'tasks': tasks.map((t) => t.toMap()).toList(),
+      },
+    );
+  }
+
+  /// Get tasks from component data
+  List<TaskItem> get tasks {
+    if (type != UIComponentType.taskList) return [];
+    final taskMaps = data['tasks'] as List<dynamic>? ?? [];
+    return taskMaps.map((map) => TaskItem.fromMap(map as Map<String, dynamic>)).toList();
+  }
+
+  /// Update a task's completion status
+  UIComponent updateTaskStatus(String taskId, bool isCompleted) {
+    if (type != UIComponentType.taskList) return this;
+
+    final updatedTasks = tasks.map((task) {
+      if (task.id == taskId) {
+        return task.copyWith(isCompleted: isCompleted);
+      }
+      return task;
+    }).toList();
+
+    return UIComponent.taskList(
+      id: id,
+      title: data['title'] as String,
+      tasks: updatedTasks,
+    );
+  }
 }
 
 /// Types of UI components that can be displayed
@@ -112,6 +154,7 @@ enum UIComponentType {
   calendarEvent,
   list,
   card,
+  taskList,
 }
 
 /// Extension to get display name for component types
@@ -128,6 +171,8 @@ extension UIComponentTypeExtension on UIComponentType {
         return 'List';
       case UIComponentType.card:
         return 'Card';
+      case UIComponentType.taskList:
+        return 'Task List';
     }
   }
 
@@ -143,6 +188,8 @@ extension UIComponentTypeExtension on UIComponentType {
         return Icons.list;
       case UIComponentType.card:
         return Icons.card_membership;
+      case UIComponentType.taskList:
+        return Icons.check_box;
     }
   }
 }

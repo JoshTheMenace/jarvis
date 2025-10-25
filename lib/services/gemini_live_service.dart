@@ -9,6 +9,7 @@ class GeminiLiveService {
   WebSocketChannel? _channel;
   final String apiKey;
   bool _isConnected = false;
+  int _componentIdCounter = 0;
 
   // Streams for bidirectional communication
   final StreamController<Uint8List> _audioOutputController =
@@ -64,7 +65,7 @@ class GeminiLiveService {
           'systemInstruction': {
             'parts': [
               {
-                'text': '''You are Jarvis, an advanced AI life support and navigation system for astronauts on Mars. You are helpful, intelligent, proactive, and have a sophisticated personality with a touch of wit.
+                'text': '''You are Jarvis, an advanced AI life support and navigation system for astronauts on Mars. You are helpful, intelligent, proactive, and have a sophisticated personality with a touch of wit and humor.
 
 You monitor the user's vital signs and suit systems in real-time. At the start of each conversation, you receive the current vital status including:
 - Heart rate (BPM)
@@ -80,13 +81,20 @@ You have visual capabilities through the user's helmet camera feed. When users a
 You help users with:
 - Monitoring vital signs and alerting to anomalies
 - Managing notes and reminders
-- Organizing mission schedules and calendar events
-- Creating checklists and tracking tasks
+- Creating mission task lists and tracking task completion
 - Providing information and mission assistance
 - Displaying relevant UI components when needed
 - Visual analysis of the environment through the helmet camera
 
-When vital signs show WARNING or CRITICAL status, proactively mention this in your responses and provide relevant advice. When users ask to see notes, reminders, calendar events, or lists, use the appropriate tool calls to display them on screen. Be conversational but efficient, and always aim to be genuinely helpful while maintaining awareness of the user's safety as a Mars astronaut.'''
+When vital signs show WARNING or CRITICAL status, proactively mention this in your responses and provide relevant advice.
+
+For task management:
+- When users request to create tasks (e.g., "create a task list for analyzing 2 samples"), use create_task_list to display a numbered task list on screen
+- Remember the task list ID you create (it will be returned in the format "component_X")
+- When users say they completed a task (e.g., "I completed task 1" or "mark task 2 as done"), use complete_task with the task_list_id and task_number (1-indexed)
+- Tasks are numbered starting from 1, and users refer to them by these numbers
+
+When users ask to see notes, reminders, calendar events, or lists, use the appropriate tool calls to display them on screen. Be conversational but efficient, and always aim to be genuinely helpful while maintaining awareness of the user's safety as a Mars astronaut.'''
               }
             ]
           },
@@ -206,6 +214,43 @@ When vital signs show WARNING or CRITICAL status, proactively mention this in yo
                       }
                     },
                     'required': ['title']
+                  }
+                },
+                {
+                  'name': 'create_task_list',
+                  'description': 'Create a task list for mission activities. Use this when the user asks to create tasks, a checklist, or track activities (e.g., "create tasks for analyzing samples"). Each task can be marked complete later.',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {
+                      'title': {
+                        'type': 'string',
+                        'description': 'The title of the task list (e.g., "Sample Analysis Tasks", "Daily Mission Checklist")'
+                      },
+                      'tasks': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                        'description': 'Array of task descriptions. Each will be created as an incomplete task.'
+                      }
+                    },
+                    'required': ['title', 'tasks']
+                  }
+                },
+                {
+                  'name': 'complete_task',
+                  'description': 'Mark a task as complete in an existing task list. Use this when the user indicates they completed a task (e.g., "mark the first task complete", "I finished analyzing sample 1").',
+                  'parameters': {
+                    'type': 'object',
+                    'properties': {
+                      'task_list_id': {
+                        'type': 'string',
+                        'description': 'The ID of the task list component'
+                      },
+                      'task_number': {
+                        'type': 'integer',
+                        'description': 'The 1-based index of the task to complete (e.g., 1 for first task, 2 for second)'
+                      }
+                    },
+                    'required': ['task_list_id', 'task_number']
                   }
                 },
                 {
@@ -510,6 +555,32 @@ When vital signs show WARNING or CRITICAL status, proactively mention this in yo
             'content': args['content'],
           });
           result = 'Card "${args['title']}" displayed successfully';
+        }
+        break;
+
+      case 'create_task_list':
+        if (args != null) {
+          final componentId = 'component_${_componentIdCounter++}';
+          print('=== Creating task list: ${args['title']} with ID: $componentId');
+          _toolCallController.add({
+            'function': 'create_task_list',
+            'id': componentId,
+            'title': args['title'],
+            'tasks': args['tasks'],
+          });
+          result = 'Task list "${args['title']}" created with ID "$componentId". It has ${(args['tasks'] as List).length} tasks. Remember this ID to complete tasks later.';
+        }
+        break;
+
+      case 'complete_task':
+        if (args != null) {
+          print('=== Completing task: List ${args['task_list_id']}, Task #${args['task_number']}');
+          _toolCallController.add({
+            'function': 'complete_task',
+            'task_list_id': args['task_list_id'],
+            'task_number': args['task_number'],
+          });
+          result = 'Task #${args['task_number']} marked as complete';
         }
         break;
 
