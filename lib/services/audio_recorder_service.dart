@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:math';
 import 'package:record/record.dart';
 import 'gemini_live_service.dart';
 
@@ -10,6 +11,13 @@ class AudioRecorderService {
   final GeminiLiveService _geminiService;
   StreamSubscription<Uint8List>? _audioStreamSubscription;
   bool _isRecording = false;
+
+  /// Stream controller for audio levels (0.0 to 1.0)
+  final StreamController<double> _audioLevelController =
+      StreamController<double>.broadcast();
+
+  /// Stream of audio levels for visualization
+  Stream<double> get audioLevelStream => _audioLevelController.stream;
 
   /// Whether audio is currently being recorded
   bool get isRecording => _isRecording;
@@ -48,6 +56,9 @@ class AudioRecorderService {
           // Send audio chunk to Gemini
           final uint8List = Uint8List.fromList(audioChunk);
           _geminiService.sendAudio(uint8List);
+
+          // Calculate audio level for visualization
+          _calculateAudioLevel(uint8List);
         },
         onError: (error) {
           print('Error in audio stream: $error');
@@ -96,9 +107,37 @@ class AudioRecorderService {
     return await _recorder.hasPermission();
   }
 
+  /// Calculate audio level from PCM data (RMS)
+  void _calculateAudioLevel(Uint8List audioData) {
+    if (audioData.isEmpty) return;
+
+    // PCM 16-bit samples
+    double sum = 0;
+    int sampleCount = audioData.length ~/ 2;
+
+    for (int i = 0; i < audioData.length - 1; i += 2) {
+      // Convert two bytes to 16-bit signed integer
+      int sample = (audioData[i + 1] << 8) | audioData[i];
+      if (sample > 32767) sample -= 65536; // Convert to signed
+
+      // Square the sample
+      sum += sample * sample;
+    }
+
+    // Calculate RMS
+    double rms = sqrt(sum / sampleCount);
+
+    // Normalize to 0.0 - 1.0 range (max value for 16-bit is 32768)
+    double normalizedLevel = (rms / 32768.0).clamp(0.0, 1.0);
+
+    // Emit the audio level
+    _audioLevelController.add(normalizedLevel);
+  }
+
   /// Dispose of resources
   void dispose() {
     stopRecording();
+    _audioLevelController.close();
     _recorder.dispose();
   }
 }

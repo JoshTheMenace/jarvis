@@ -11,6 +11,7 @@ import 'models/ui_component.dart';
 import 'models/vitals_data.dart';
 import 'widgets/hud_overlay_widget.dart';
 import 'widgets/vitals_hud_widget.dart';
+import 'widgets/waveform_visualizer.dart';
 import 'dart:async';
 
 /// Jarvis HUD Screen - Tony Stark style AR interface
@@ -52,6 +53,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
   int _componentIdCounter = 0;
 
   VitalsData? _currentVitals;
+  double _currentAudioLevel = 0.0;
 
   Timer? _pulseTimer;
   double _micPulse = 1.0;
@@ -125,6 +127,13 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     _vitalsService.vitalsStream.listen((vitals) {
       setState(() {
         _currentVitals = vitals;
+      });
+    });
+
+    // Listen to audio level updates for waveform
+    _audioRecorder.audioLevelStream.listen((level) {
+      setState(() {
+        _currentAudioLevel = level;
       });
     });
 
@@ -539,6 +548,17 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
               right: 20,
               child: VitalsHUDWidget(vitals: _currentVitals!),
             ),
+
+          // Waveform visualizer (bottom)
+          Positioned(
+            bottom: 20,
+            left: 20,
+            right: 20,
+            child: WaveformVisualizer(
+              isActive: _isRecording,
+              audioLevel: _currentAudioLevel,
+            ),
+          ),
         ],
       ),
     );
