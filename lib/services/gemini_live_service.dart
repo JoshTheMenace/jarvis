@@ -383,9 +383,12 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
   /// Handle function calls from Gemini
   void _handleFunctionCall(Map<String, dynamic> functionCall) {
     final functionName = functionCall['name'];
+    final functionId = functionCall['id'];
     final args = functionCall['args'] as Map<String, dynamic>?;
 
-    print('=== Function called: $functionName');
+    print('=== Function called: $functionName (ID: $functionId)');
+
+    String result = 'success';
 
     switch (functionName) {
       case 'show_note':
@@ -396,6 +399,7 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
             'title': args['title'],
             'content': args['content'],
           });
+          result = 'Note "${args['title']}" displayed successfully';
         }
         break;
 
@@ -408,6 +412,7 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
             'time': args['time'],
             'description': args['description'],
           });
+          result = 'Reminder "${args['title']}" created successfully';
         }
         break;
 
@@ -421,6 +426,7 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
             'endTime': args['endTime'],
             'description': args['description'],
           });
+          result = 'Calendar event "${args['title']}" created successfully';
         }
         break;
 
@@ -432,6 +438,7 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
             'title': args['title'],
             'items': args['items'],
           });
+          result = 'List "${args['title']}" displayed successfully';
         }
         break;
 
@@ -444,11 +451,46 @@ When users ask to see notes, reminders, calendar events, or lists, use the appro
             'subtitle': args['subtitle'],
             'content': args['content'],
           });
+          result = 'Card "${args['title']}" displayed successfully';
         }
         break;
 
       default:
         print('=== Unknown function: $functionName');
+        result = 'Unknown function: $functionName';
+    }
+
+    // Send function response back to Gemini
+    if (functionId != null) {
+      _sendFunctionResponse(functionId, functionName, result);
+    }
+  }
+
+  /// Send function response back to Gemini
+  Future<void> _sendFunctionResponse(String functionId, String functionName, String result) async {
+    if (!_isConnected) return;
+
+    try {
+      final message = {
+        'toolResponse': {
+          'functionResponses': [
+            {
+              'id': functionId,
+              'name': functionName,
+              'response': {
+                'output': {
+                  'result': result,
+                }
+              }
+            }
+          ]
+        }
+      };
+
+      _channel?.sink.add(jsonEncode(message));
+      print('>>> Sent function response for $functionName (ID: $functionId)');
+    } catch (e) {
+      print('Error sending function response: $e');
     }
   }
 

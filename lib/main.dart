@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'home_screen_v2.dart';
+import 'hud_screen.dart';
 
 // TODO: Replace with your actual Gemini API key
 const String GEMINI_API_KEY = 'AIzaSyC9FnbVw__DFvhCO9CJYzyVa6mvJtL0sE0';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Set to fullscreen immersive mode
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   // Request permissions
   await _requestPermissions();
@@ -34,12 +38,20 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Jarvis - Gemini Live',
+      title: 'JARVIS',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Colors.black,
+        primaryColor: Colors.cyanAccent,
+        colorScheme: ColorScheme.dark(
+          primary: Colors.cyanAccent,
+          secondary: Colors.blueAccent,
+          surface: Colors.black,
+        ),
         useMaterial3: true,
       ),
-      home: const GeminiLiveChatScreen(apiKey: GEMINI_API_KEY),
+      home: const JarvisHUDScreen(apiKey: GEMINI_API_KEY),
     );
   }
 }

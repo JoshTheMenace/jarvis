@@ -1,0 +1,535 @@
+import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'services/gemini_live_service.dart';
+import 'services/audio_recorder_service.dart';
+import 'services/audio_player_service.dart';
+import 'models/ui_component.dart';
+import 'widgets/hud_overlay_widget.dart';
+import 'dart:async';
+
+/// Jarvis HUD Screen - Tony Stark style AR interface
+class JarvisHUDScreen extends StatefulWidget {
+  final String apiKey;
+
+  const JarvisHUDScreen({
+    super.key,
+    required this.apiKey,
+  });
+
+  @override
+  State<JarvisHUDScreen> createState() => _JarvisHUDScreenState();
+}
+
+class _JarvisHUDScreenState extends State<JarvisHUDScreen>
+    with TickerProviderStateMixin {
+  late GeminiLiveService _geminiService;
+  late AudioRecorderService _audioRecorder;
+  late AudioPlayerService _audioPlayer;
+
+  CameraController? _cameraController;
+  List<CameraDescription>? _cameras;
+  bool _isCameraInitialized = false;
+
+  final List<UIComponent> _uiComponents = [];
+  final Map<String, AnimationController> _componentAnimations = {};
+
+  bool _isConnected = false;
+  bool _isRecording = false;
+  bool _showTranscript = false;
+  String _lastTranscript = '';
+  int _componentIdCounter = 0;
+
+  Timer? _pulseTimer;
+  double _micPulse = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+    _initializeServices();
+    _startPulseAnimation();
+  }
+
+  /// Initialize camera
+  Future<void> _initializeCamera() async {
+    try {
+      final cameraStatus = await Permission.camera.request();
+      if (!cameraStatus.isGranted) {
+        print('Camera permission denied - using black background');
+        return;
+      }
+
+      _cameras = await availableCameras();
+      if (_cameras != null && _cameras!.isNotEmpty) {
+        // Use back camera by default
+        final camera = _cameras!.firstWhere(
+          (cam) => cam.lensDirection == CameraLensDirection.back,
+          orElse: () => _cameras!.first,
+        );
+
+        _cameraController = CameraController(
+          camera,
+          ResolutionPreset.high,
+          enableAudio: false,
+        );
+
+        await _cameraController!.initialize();
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+          });
+        }
+        print('Camera initialized successfully');
+      }
+    } catch (e) {
+      print('Error initializing camera: $e');
+      print('Continuing without camera - using black background');
+      // Continue without camera - the UI will show black background
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = false;
+        });
+      }
+    }
+  }
+
+  /// Initialize Gemini services
+  void _initializeServices() {
+    _geminiService = GeminiLiveService(apiKey: widget.apiKey);
+    _audioRecorder = AudioRecorderService(_geminiService);
+    _audioPlayer = AudioPlayerService(_geminiService);
+
+    // Listen to text responses for transcript
+    _geminiService.textOutputStream.listen((text) {
+      setState(() {
+        _lastTranscript = text;
+        _showTranscript = true;
+      });
+
+      // Auto-hide transcript after 5 seconds
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() {
+            _showTranscript = false;
+          });
+        }
+      });
+    });
+
+    // Listen to connection state
+    _geminiService.connectionStateStream.listen((isConnected) {
+      setState(() {
+        _isConnected = isConnected;
+      });
+    });
+
+    // Listen to tool calls and create UI components
+    _geminiService.toolCallStream.listen((toolCall) {
+      _handleToolCall(toolCall);
+    });
+
+    // Auto-connect to Gemini
+    _connect();
+  }
+
+  /// Start pulse animation for microphone
+  void _startPulseAnimation() {
+    _pulseTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (_isRecording && mounted) {
+        setState(() {
+          _micPulse = _micPulse == 1.0 ? 1.3 : 1.0;
+        });
+      }
+    });
+  }
+
+  /// Connect to Gemini
+  Future<void> _connect() async {
+    try {
+      await _geminiService.connect();
+    } catch (e) {
+      print('Failed to connect: $e');
+    }
+  }
+
+  /// Handle tool calls from Gemini
+  void _handleToolCall(Map<String, dynamic> toolCall) {
+    final function = toolCall['function'] as String?;
+    if (function == null) return;
+
+    final componentId = 'component_${_componentIdCounter++}';
+    UIComponent? component;
+
+    switch (function) {
+      case 'show_note':
+        component = UIComponent.note(
+          id: componentId,
+          title: toolCall['title'] ?? 'Note',
+          content: toolCall['content'] ?? '',
+        );
+        break;
+
+      case 'show_reminder':
+        final timeStr = toolCall['time'] as String?;
+        DateTime? time;
+        if (timeStr != null) {
+          try {
+            time = DateTime.parse(timeStr);
+          } catch (e) {
+            time = DateTime.now().add(const Duration(hours: 1));
+          }
+        } else {
+          time = DateTime.now().add(const Duration(hours: 1));
+        }
+
+        component = UIComponent.reminder(
+          id: componentId,
+          title: toolCall['title'] ?? 'Reminder',
+          time: time,
+          description: toolCall['description'],
+        );
+        break;
+
+      case 'show_calendar_event':
+        final startTimeStr = toolCall['startTime'] as String?;
+        final endTimeStr = toolCall['endTime'] as String?;
+
+        DateTime? startTime;
+        DateTime? endTime;
+
+        if (startTimeStr != null) {
+          try {
+            startTime = DateTime.parse(startTimeStr);
+          } catch (e) {
+            startTime = DateTime.now();
+          }
+        } else {
+          startTime = DateTime.now();
+        }
+
+        if (endTimeStr != null) {
+          try {
+            endTime = DateTime.parse(endTimeStr);
+          } catch (e) {
+            endTime = null;
+          }
+        }
+
+        component = UIComponent.calendarEvent(
+          id: componentId,
+          title: toolCall['title'] ?? 'Event',
+          startTime: startTime,
+          endTime: endTime,
+          description: toolCall['description'],
+        );
+        break;
+
+      case 'show_list':
+        final items = (toolCall['items'] as List?)?.cast<String>() ?? [];
+        component = UIComponent.list(
+          id: componentId,
+          title: toolCall['title'] ?? 'List',
+          items: items,
+        );
+        break;
+
+      case 'show_card':
+        component = UIComponent.card(
+          id: componentId,
+          title: toolCall['title'] ?? 'Card',
+          subtitle: toolCall['subtitle'],
+          content: toolCall['content'],
+        );
+        break;
+    }
+
+    if (component != null) {
+      _addComponentWithAnimation(component);
+    }
+  }
+
+  /// Add component with slide-in animation
+  void _addComponentWithAnimation(UIComponent component) {
+    final controller = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+
+    setState(() {
+      _uiComponents.add(component);
+      _componentAnimations[component.id] = controller;
+    });
+
+    controller.forward();
+  }
+
+  /// Remove component with animation
+  void _removeComponent(String id) {
+    final controller = _componentAnimations[id];
+    if (controller != null) {
+      controller.reverse().then((_) {
+        setState(() {
+          _uiComponents.removeWhere((component) => component.id == id);
+          _componentAnimations.remove(id);
+        });
+        controller.dispose();
+      });
+    }
+  }
+
+  /// Toggle voice recording
+  Future<void> _toggleRecording() async {
+    if (!_isConnected) return;
+
+    if (_isRecording) {
+      await _audioRecorder.stopRecording();
+      setState(() {
+        _isRecording = false;
+        _micPulse = 1.0;
+      });
+    } else {
+      final status = await Permission.microphone.request();
+      if (!status.isGranted) return;
+
+      try {
+        await _audioRecorder.startRecording();
+        setState(() {
+          _isRecording = true;
+        });
+      } catch (e) {
+        print('Failed to start recording: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Camera background
+          if (_isCameraInitialized && _cameraController != null)
+            Positioned.fill(
+              child: CameraPreview(_cameraController!),
+            )
+          else
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black,
+                      Colors.grey.shade900,
+                      Colors.black,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          // Dark overlay for better contrast
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.3),
+            ),
+          ),
+
+          // HUD Grid pattern overlay
+          Positioned.fill(
+            child: CustomPaint(
+              painter: HUDGridPainter(),
+            ),
+          ),
+
+          // UI Components floating overlays
+          ...List.generate(_uiComponents.length, (index) {
+            final component = _uiComponents[index];
+            final animation = _componentAnimations[component.id];
+
+            if (animation == null) return const SizedBox.shrink();
+
+            return Positioned(
+              top: 120 + (index * 160.0),
+              left: 20,
+              right: 20,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1.0, 0.0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                )),
+                child: FadeTransition(
+                  opacity: animation,
+                  child: HUDOverlayWidget(
+                    component: component,
+                    onDismiss: () => _removeComponent(component.id),
+                  ),
+                ),
+              ),
+            );
+          }),
+
+          // Transcript overlay (bottom)
+          if (_showTranscript)
+            Positioned(
+              bottom: 120,
+              left: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  border: Border.all(
+                    color: Colors.cyanAccent.withOpacity(0.5),
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _lastTranscript,
+                  style: const TextStyle(
+                    color: Colors.cyanAccent,
+                    fontSize: 14,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+
+          // Connection status (top)
+          Positioned(
+            top: 60,
+            left: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                border: Border.all(
+                  color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+                  width: 1,
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isConnected ? 'JARVIS ONLINE' : 'OFFLINE',
+                    style: TextStyle(
+                      color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Microphone button (bottom center)
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: GestureDetector(
+                onTap: _toggleRecording,
+                child: AnimatedScale(
+                  scale: _isRecording ? _micPulse : 1.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _isRecording
+                          ? Colors.redAccent.withOpacity(0.8)
+                          : Colors.cyanAccent.withOpacity(0.3),
+                      border: Border.all(
+                        color: _isRecording ? Colors.redAccent : Colors.cyanAccent,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_isRecording ? Colors.redAccent : Colors.cyanAccent)
+                              .withOpacity(0.5),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      _isRecording ? Icons.mic : Icons.mic_none,
+                      color: _isRecording ? Colors.white : Colors.cyanAccent,
+                      size: 32,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseTimer?.cancel();
+    _cameraController?.dispose();
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
+    _geminiService.dispose();
+    for (var controller in _componentAnimations.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+}
+
+/// Custom painter for HUD grid effect
+class HUDGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.cyanAccent.withOpacity(0.05)
+      ..strokeWidth = 0.5
+      ..style = PaintingStyle.stroke;
+
+    // Vertical lines
+    for (double x = 0; x < size.width; x += 50) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        paint,
+      );
+    }
+
+    // Horizontal lines
+    for (double y = 0; y < size.height; y += 50) {
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
