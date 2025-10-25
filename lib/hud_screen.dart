@@ -6,8 +6,11 @@ import 'services/audio_recorder_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/wake_word_service.dart';
 import 'services/camera_frame_service.dart';
+import 'services/vitals_service.dart';
 import 'models/ui_component.dart';
+import 'models/vitals_data.dart';
 import 'widgets/hud_overlay_widget.dart';
+import 'widgets/vitals_hud_widget.dart';
 import 'dart:async';
 
 /// Jarvis HUD Screen - Tony Stark style AR interface
@@ -32,6 +35,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
   late AudioPlayerService _audioPlayer;
   late WakeWordService _wakeWordService;
   late CameraFrameService _cameraFrameService;
+  late VitalsService _vitalsService;
 
   CameraController? _cameraController;
   List<CameraDescription>? _cameras;
@@ -46,6 +50,8 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
   bool _showTranscript = false;
   String _lastTranscript = '';
   int _componentIdCounter = 0;
+
+  VitalsData? _currentVitals;
 
   Timer? _pulseTimer;
   double _micPulse = 1.0;
@@ -107,12 +113,23 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     _audioRecorder = AudioRecorderService(_geminiService);
     _audioPlayer = AudioPlayerService(_geminiService);
     _cameraFrameService = CameraFrameService();
+    _vitalsService = VitalsService();
 
     // Initialize wake word service
     _wakeWordService = WakeWordService(
       accessKey: widget.picovoiceKey,
       onWakeWordDetected: _onWakeWordDetected,
     );
+
+    // Listen to vitals updates
+    _vitalsService.vitalsStream.listen((vitals) {
+      setState(() {
+        _currentVitals = vitals;
+      });
+    });
+
+    // Start vitals monitoring
+    _vitalsService.start();
 
     // Listen to text responses for transcript
     _geminiService.textOutputStream.listen((text) {
@@ -149,6 +166,8 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
       if (_isRecording) {
         _toggleRecording();
       }
+      // Reset frame counter for next turn to get fresh frames
+      _cameraFrameService.resetFrameCounter();
     });
 
     // Auto-connect to Gemini
@@ -393,7 +412,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
                   print('Error sending video frame: $e');
                 }
               },
-              intervalMs: 1000, // 1 frame per second
+              intervalMs: 2500, // 1 frame every 2.5 seconds to reduce lag
             );
 
             setState(() {
@@ -512,45 +531,14 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
               ),
             ),
 
-          // Connection status (top)
-          Positioned(
-            top: 60,
-            left: 20,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                border: Border.all(
-                  color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-                  width: 1,
-                ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isConnected ? 'JARVIS ONLINE' : 'OFFLINE',
-                    style: TextStyle(
-                      color: _isConnected ? Colors.greenAccent : Colors.redAccent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ],
-              ),
+          // Vitals HUD (top)
+          if (_currentVitals != null)
+            Positioned(
+              top: 20,
+              left: 20,
+              right: 20,
+              child: VitalsHUDWidget(vitals: _currentVitals!),
             ),
-          ),
         ],
       ),
     );
@@ -565,6 +553,7 @@ class _JarvisHUDScreenState extends State<JarvisHUDScreen>
     _audioPlayer.dispose();
     _geminiService.dispose();
     _wakeWordService.dispose();
+    _vitalsService.dispose();
     for (var controller in _componentAnimations.values) {
       controller.dispose();
     }
